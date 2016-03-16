@@ -117,6 +117,7 @@ NOOP_TAGS = set([
 ])
 VARINT_TAGS = set([
     SerializationTag.REFERENCE_COUNT,
+    SerializationTag.OBJECT,
 ])
 
 
@@ -141,6 +142,21 @@ class Reader(StructIO):
         elif tag == SerializationTag.ARRAY_BUFFER:
             buflen = self.read_varint()
             return (tag, self.read(buflen))
+        elif tag == SerializationTag.STRING:
+            # TODO: try reading as uint32 first
+            strlen = self.read_varint()
+            result = self.read(strlen)
+            return (tag, result)
+        elif tag == SerializationTag.DATE:
+            return (tag, self.read_double())
+        elif tag == SerializationTag.INT32:
+            result = self.read_varint()
+            return (tag, ZigZag.decode(result))
+        elif tag == SerializationTag.ARRAY_BUFFER_VIEW:
+            subtag = ArrayBufferViewSubtag(self.read(1))
+            offset = self.read_varint()
+            length = self.read_varint()
+            return (tag, (subtag, offset, length))
         else:
             raise NotImplementedError(
                 'Unimplemented Tag, %s' %
@@ -165,6 +181,30 @@ class Writer(StructIO):
             value, = token_args
             self.write_tag(tag)
             self.write_varint(value)
+        elif tag == SerializationTag.ARRAY_BUFFER:
+            value, = token_args
+            self.write_tag(tag)
+            self.write_varint(len(value))
+            self.write(value)
+        elif tag == SerializationTag.STRING:
+            value, = token_args
+            self.write_tag(tag)
+            assert len(value) > 1, "Short STRING not Implemented"
+            self.write_varint(len(value))
+            self.write(value)
+        elif tag == SerializationTag.DATE:
+            value, = token_args
+            self.write_double(value)
+        elif tag == SerializationTag.INT32:
+            value, = token_args
+            value = ZigZag.encode(value)
+            self.write_varint(value)
+        elif tag == SerializationTag.ARRAY_BUFFER_VIEW:
+            subtag, offset, length = token_args
+            subtag = ArrayBufferViewSubtag(subtag)
+            self.write(subtag.value)
+            self.write_varint(offset)
+            self.write_varint(length)
         else:
             raise NotImplementedError(
                 'Unimplemented Tag, %s' %
